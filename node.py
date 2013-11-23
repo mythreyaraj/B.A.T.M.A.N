@@ -5,7 +5,7 @@ import multiprocessing
 import time
 from django.utils import simplejson as json
 
-global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE
+global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE,TIMEOUT
 WAITPEROGM=2
 TTL=5
 WINDOWSIZE=6
@@ -17,10 +17,11 @@ neighbours=[]
 send=[]
 seqnum=0
 SLIDINGWINDOW={}
-
+SLIDINGWINDOWTIMEOUT={}
+TIMEOUT=5
 
 def Server():
-	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE
+	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE,SLIDINGWINDOWTIMEOUT
 	try :
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		print 'Socket created'
@@ -46,7 +47,6 @@ def Server():
 	     
 		if not data: 
 			break
-		
 		if(data[0]!='@' and data[0]!='$'):
 			data=json.loads(data, "utf-8")
 			addr=data['senderip'].split(":")
@@ -55,7 +55,6 @@ def Server():
 				len(SLIDINGWINDOW[data['ip']])
 			except:
 				SLIDINGWINDOW[data['ip']]={}
-
 			try:
 				len(SLIDINGWINDOW[data['ip']][addr[0]+':'+str(addr[1])])
 			except:
@@ -64,13 +63,29 @@ def Server():
 			try:
 				len(SLIDINGWINDOW[data['ip']][addr[0]+':'+str(addr[1])][data['seq']])				
 			except:
-				SLIDINGWINDOW[data['ip']][addr[0]+':'+str(addr[1])][data['seq']]=1	
+				seqdata=int(data['seq'])-WINDOWSIZE
+				if(seqdata>0):
+					try:
+						SLIDINGWINDOW[data['ip']][addr[0]+':'+str(addr[1])].pop(str(seqdata))
+					except:
+						randomvarialb=1
+				SLIDINGWINDOW[data['ip']][addr[0]+':'+str(addr[1])][data['seq']]=1
+			
+			try:
+				len(SLIDINGWINDOWTIMEOUT[data['ip']])
+			except:
+				SLIDINGWINDOWTIMEOUT[data['ip']]={}
+			try:
+				len(SLIDINGWINDOWTIMEOUT[data['ip']][addr[0]+':'+str(addr[1])])
+			except:
+				SLIDINGWINDOWTIMEOUT[data['ip']][addr[0]+':'+str(addr[1])]=TIMEOUT
+
 
 				data['senderip']=':'.join([IP,str(PORT)])
 
 				ttl=int(data['ttl'])
 				for neighbour in neighbours:
-					if(neighbour[0]!=addr[0] or neighbour[1]!=addr[1]):
+					if(neighbour[0]!=addr[0] or int(neighbour[1])!=int(addr[1])):
 						if(ttl>1):
 							ttl-=1;
 							data['ttl']=str(ttl)
@@ -93,7 +108,7 @@ def Server():
 			desHost=data[1].split(":")[0]
 			desPort=data[1].split(":")[1]
 			if(desHost!=IP or int(desPort)!=int(PORT)):
-				#print SLIDINGWINDOW[data[1]]
+				print SLIDINGWINDOW[data[1]]
 				try:
 					len(SLIDINGWINDOW[data[1]])
 					conti=1
@@ -130,15 +145,18 @@ def Server():
 								maxaddr=x
 						msg=','.join(data)
 						msg+=","+IP+":"+PORT
-						arr=(msg,maxaddr.split(":")[0],maxaddr.split(":")[1])	
-						send.append(arr)
+						if(maxaddr!=''):
+							arr=(msg,maxaddr.split(":")[0],maxaddr.split(":")[1])	
+							send.append(arr)
+						else:
+							print 'data cant be sent(not sure)'
 				
 			else:
 				print data
 	s.close()
 	
 def Client():
-	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE
+	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE,SLIDINGWINDOWTIMEOUT
 	try:
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	except socket.error:
@@ -161,7 +179,7 @@ def Client():
 
 
 def ogmSend():
-	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE
+	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE,SLIDINGWINDOWTIMEOUT
 	while(1):
 		for neighbour in neighbours:
 
@@ -183,7 +201,7 @@ def sendData():
 					len(SLIDINGWINDOW[msg.split(',')[1]])
 					conti=1
 				except:
-					print 'data cant be sent(not sure)'
+					print 'data cannot be sent'
 					conti=0
 				if(conti==1):
 					maxe=-1
@@ -205,18 +223,38 @@ def sendData():
 							maxaddr=x
 					
 					msg+=","+IP+":"+PORT
-					arr=(msg,maxaddr.split(":")[0],maxaddr.split(":")[1])	
-					send.append(arr)
+					if(maxaddr!=''):
+						arr=(msg,maxaddr.split(":")[0],maxaddr.split(":")[1])	
+						send.append(arr)
+					else:
+						print 'data cannot be sent'
 				
 		else:
 			print msg
-
+def timer():
+	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE,SLIDINGWINDOWTIMEOUT
+	while(1):
+		arr=[]
+		for x,y in SLIDINGWINDOWTIMEOUT.iteritems():
+			for a,b in y.iteritems():
+				SLIDINGWINDOWTIMEOUT[x][a]=b-1
+				if(b==0):
+					arr.append([x,a])
+		for x in arr:
+			SLIDINGWINDOW[x[0]].pop(x[1])
+			SLIDINGWINDOWTIMEOUT[x[0]].pop(x[1])
+		time.sleep(1)
+def printer():
+	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE,SLIDINGWINDOWTIMEOUT
+	while (1):
+		print SLIDINGWINDOW
+		time.sleep(10)
 def initNode():
-	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE
+	global seqnum,neighbours,IP,TTL,send,PORT,SLIDINGWINDOW,WAITPEROGM,WINDOWSIZE,SLIDINGWINDOWTIMEOUT
 	IP=raw_input('enter your ip address:')
 	PORT=raw_input('enter your port number:')
 	
-	num=raw_input('Enter no of nodes to connect')
+	num=raw_input('Enter no of nodes to connect: ')
 	for i in range(int(num)):
 		addr=raw_input('Enter Host:')
 		port=raw_input('Enter port:')
@@ -224,16 +262,22 @@ def initNode():
 		msg='@,'+IP+":"+PORT
 		arr=[msg,addr,port]
 		send.append(arr)
-		print neighbours
+		#print neighbours
 
 	p = threading.Thread(target=Client)
 	p1 = threading.Thread(target=Server)
 	p2 = threading.Thread(target=ogmSend)
 	p3 = threading.Thread(target=sendData)
+	p4 = threading.Thread(target=timer)
+	p5 = threading.Thread(target=printer)
 	p.start()
 	p1.start()
 	p2.start()
 	p3.start()
+	p4.start()
+	p5.start()
+	p5.join()
+	p4.join()
 	p3.join()
 	p1.join()
 	p2.join()
